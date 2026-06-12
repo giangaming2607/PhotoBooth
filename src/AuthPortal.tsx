@@ -12,10 +12,20 @@ export default function AuthPortal() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await axios.post('/api/login', { username: role, password });
-      if (res.data.success) {
-        if (role === 'admin') navigate('/admin');
-        else navigate('/photobooth');
+      // For Vercel hosting, we do client-side auth
+      if (role === 'admin' && password === 'admin') {
+        navigate('/admin');
+      } else if (role === 'photo' && password === 'photo') {
+        navigate('/photobooth');
+      } else {
+        // Fallback to API in case server is running
+        const res = await axios.post('/api/login', { username: role, password });
+        if (res.data.success) {
+          if (role === 'admin') navigate('/admin');
+          else navigate('/photobooth');
+        } else {
+          setError('Invalid credentials');
+        }
       }
     } catch (err) {
       setError('Invalid credentials');

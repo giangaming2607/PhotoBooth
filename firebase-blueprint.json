@@ -1,0 +1,49 @@
+{
+  "entities": {
+    "HomeSettings": {
+      "title": "Home Settings",
+      "description": "Global settings for the photobooth app",
+      "type": "object",
+      "properties": {
+        "ui_theme": { "type": "string" },
+        "title": { "type": "string" },
+        "bg_color": { "type": "string" },
+        "wa_message": { "type": "string" }
+      }
+    },
+    "Frame": {
+      "title": "Frame Definition",
+      "description": "A photobooth frame layout with slots",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "bg_data_url": { "type": "string" },
+        "hiasan_data_url": { "type": "string" }
+      }
+    },
+    "Session": {
+      "title": "Photobooth Session",
+      "description": "A completed photobooth capture session",
+      "type": "object",
+      "properties": {
+        "local_url": { "type": "string" },
+        "gif_url": { "type": "string" },
+        "timestamp": { "type": "number" }
+      }
+    }
+  },
+  "firestore": {
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/HomeSettings" },
+      "description": "Global config documents"
+    },
+    "/frames/{frameId}": {
+      "schema": { "$ref": "#/entities/Frame" },
+      "description": "Available frames"
+    },
+    "/sessions/{sessionId}": {
+      "schema": { "$ref": "#/entities/Session" },
+      "description": "Captured sessions"
+    }
+  }
+}
