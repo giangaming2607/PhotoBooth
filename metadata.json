@@ -1,0 +1,6 @@
+{
+  "name": "Photobooth Studio",
+  "description": "A full-featured photobooth app with layout editor, camera selection, and QR sharing.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
