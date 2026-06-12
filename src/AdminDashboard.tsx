@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import axios from 'axios';
 import { Settings, Image as ImageIcon, Video, Home, Database, Printer, Trash, Edit, Check, Upload, Save, Lock, Unlock } from 'lucide-react';
 import type { AppSettings, Frame, Session, PrintJob } from './types';
 import Draggable from 'react-draggable';
+import { db } from './firebase';
+import { doc, getDoc, getDocs, setDoc, deleteDoc, collection, query, where, updateDoc } from 'firebase/firestore';
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('summary');
@@ -21,23 +22,29 @@ export default function AdminDashboard() {
   }, [activeTab]);
 
   const fetchData = async () => {
-    const [cRes, fRes, sRes] = await Promise.all([
-      axios.get('/api/config'),
-      axios.get('/api/frames'),
-      axios.get('/api/sessions')
-    ]);
-    setSettings(cRes.data.config);
-    setFrames(fRes.data.frames || []);
-    setSessions(sRes.data.sessions || []);
+    try {
+      const dbRef = doc(db, 'settings', 'home');
+      const conf = await getDoc(dbRef);
+      if (conf.exists()) setSettings(conf.data() as AppSettings);
+
+      const frmSnap = await getDocs(collection(db, 'frames'));
+      setFrames(frmSnap.docs.map(d => ({ id: d.id, ...d.data() } as Frame)));
+
+      const sessSnap = await getDocs(collection(db, 'sessions'));
+      setSessions(sessSnap.docs.map(d => ({ id: d.id, ...d.data() } as Session)));
+    } catch(e) { console.error(e); }
   };
 
   const fetchQueue = async () => {
-    const res = await axios.get('/api/print_queue');
-    setQueue(res.data.pending || []);
+    try {
+      const q = query(collection(db, 'print_queue'), where('status', '==', 'pending'));
+      const qs = await getDocs(q);
+      setQueue(qs.docs.map(d => ({ id: d.id, ...d.data() } as PrintJob)));
+    } catch(e) { console.error(e); }
   };
 
   const saveSettings = async (newSettings: Partial<AppSettings>) => {
-    await axios.post('/api/config/home', newSettings);
+    await setDoc(doc(db, 'settings', 'home'), newSettings, { merge: true });
     setSettings(s => s ? { ...s, ...newSettings } : null);
   };
 
@@ -203,14 +210,15 @@ export default function AdminDashboard() {
 
   const saveFrame = async () => {
     if (!editingFrame) return;
-    await axios.post('/api/frames', editingFrame);
+    const frameId = editingFrame.id || Date.now().toString();
+    await setDoc(doc(db, 'frames', frameId), { ...editingFrame, id: frameId }, { merge: true });
     setEditingFrame(null);
     fetchData();
   };
 
   const deleteFrame = async (id: string) => {
     if (!confirm('Delete frame?')) return;
-    await axios.delete(`/api/frames/${id}`);
+    await deleteDoc(doc(db, 'frames', id));
     fetchData();
   };
 
@@ -574,7 +582,10 @@ export default function AdminDashboard() {
                      <div>
                        <span className="font-mono text-xs text-slate-500 block">JOB ID: {q.id.slice(0,8)}</span>
                        <span className="font-mono text-[10px] text-slate-600 block mb-3">SESSION: {q.session_id.slice(0,12)}</span>
-                       <button onClick={() => axios.put(`/api/print_queue/${q.id}`).then(fetchQueue)} className="w-full bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-600 hover:text-white px-4 py-3 rounded-xl font-bold text-sm tracking-wider transition-colors">
+                       <button onClick={async () => {
+                         await updateDoc(doc(db, 'print_queue', q.id), { status: 'completed' });
+                         fetchQueue();
+                       }} className="w-full bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-600 hover:text-white px-4 py-3 rounded-xl font-bold text-sm tracking-wider transition-colors">
                          MARK PRINTED
                        </button>
                      </div>

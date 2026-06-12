@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Webcam from 'react-webcam';
-import axios from 'axios';
 import { RefreshCw, Battery, Moon, Sun, Smartphone } from 'lucide-react';
+import { db } from './firebase';
+import { doc, setDoc } from 'firebase/firestore';
 
 export default function RemoteCam() {
   const webcamRef = useRef<Webcam>(null);
@@ -36,9 +37,7 @@ export default function RemoteCam() {
     const intervalId = setInterval(async () => {
       const imageSrc = webcamRef.current?.getScreenshot({ width: 720, height: 1280 }); // Default portraitish
       if (imageSrc) {
-        // Simple rotation could be handled here via canvas if strict orientation is needed
-        // For simplicity, we just send as is and assume backend/frontend handles orientation
-        await axios.post('/api/remote_camera', { frame: imageSrc, deviceId }).catch(() => {});
+        await setDoc(doc(db, 'remote_camera', deviceId), { frame: imageSrc, lastUpdated: Date.now() }, { merge: true }).catch(() => {});
       }
     }, 100); // 10fps
 

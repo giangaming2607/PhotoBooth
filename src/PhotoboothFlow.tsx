@@ -1,5 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import axios from 'axios';
+import { db } from './firebase';
+import { doc, getDoc, collection, getDocs, setDoc, onSnapshot, addDoc } from 'firebase/firestore';
+import { getStorage, ref, uploadString, getDownloadURL } from 'firebase/storage';
+import { defaultSettings } from './lib/defaults';
+
+// We replace the axios calls with firebase.
 import Webcam from 'react-webcam';
 import GIF from 'gif.js.optimized';
 import { QRCodeSVG } from 'qrcode.react';
@@ -48,24 +53,35 @@ export default function PhotoboothFlow() {
   const [waNumber, setWaNumber] = useState('');
 
   useEffect(() => {
-    axios.get('/api/config').then(res => setSettings(res.data.config));
-    axios.get('/api/frames').then(res => setFrames(res.data.frames || []));
+    // Load config
+    getDoc(doc(db, 'settings', 'home')).then((docSnap) => {
+      if (docSnap.exists()) {
+        setSettings(docSnap.data() as AppSettings);
+      } else {
+        setSettings(defaultSettings as any);
+      }
+    }).catch(e => {
+       console.error(e);
+       setSettings(defaultSettings as any);
+    });
+
+    // Load frames
+    getDocs(collection(db, 'frames')).then((snapshot) => {
+      const frs = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Frame));
+      setFrames(frs);
+    }).catch(e => console.error(e));
   }, []);
 
-  // Poll Remote Camera if active
+  // Sync remote camera
   useEffect(() => {
-    let intv: any;
     if (step === 'CAPTURE' && camSource === 'remote') {
-      intv = setInterval(async () => {
-        try {
-          const res = await axios.get('/api/remote_camera?deviceId=default');
-          if (res.data.success) setRemoteFrame(res.data.frame);
-        } catch (e) {
-          console.error("Remote cam disconnected");
+      const unsub = onSnapshot(doc(db, 'remote_camera', 'default'), (doc) => {
+        if (doc.exists() && doc.data().frame) {
+          setRemoteFrame(doc.data().frame);
         }
-      }, 100);
+      });
+      return () => unsub();
     }
-    return () => clearInterval(intv);
   }, [step, camSource]);
 
   const startSession = () => {
@@ -178,11 +194,30 @@ export default function PhotoboothFlow() {
     const pngB64 = canvas.toDataURL('image/png', 0.9);
 
     try {
-      const res = await axios.post('/api/upload', {
-        png_b64: pngB64,
-        gif_b64: ""
+      const sessionId = Date.now().toString() + Math.floor(Math.random()*1000).toString();
+      const storage = getStorage();
+      
+      const pngRef = ref(storage, `sessions/${sessionId}.png`);
+      await uploadString(pngRef, pngB64, 'data_url');
+      const pngUrl = await getDownloadURL(pngRef);
+      
+      const sessionDocRef = doc(collection(db, 'sessions'), sessionId);
+      const shareUrl = window.location.origin + `/share/${sessionId}`;
+
+      const resData = {
+        session_id: sessionId,
+        local_url: pngUrl,
+        share_link: shareUrl,
+        qr_url: `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(shareUrl)}`
+      };
+
+      await setDoc(sessionDocRef, {
+        timestamp: Date.now(),
+        png_url: pngUrl,
+        gif_url: ""
       });
-      setResultData(res.data);
+
+      setResultData(resData);
       setStep('RESULT');
 
       // Now build GIF in background asynchronously
@@ -219,10 +254,13 @@ export default function PhotoboothFlow() {
             const reader = new FileReader();
             reader.onloadend = async () => {
               const gifB64 = reader.result as string;
-              const gifRes = await axios.post(`/api/upload_gif/${res.data.session_id}`, {
-                gif_b64: gifB64
-              });
-              setResultData(prev => prev ? {...prev, gif_url: gifRes.data.gif_url} : null);
+              
+              const gifRef = ref(storage, `sessions/${sessionId}.gif`);
+              await uploadString(gifRef, gifB64, 'data_url');
+              const gifUrl = await getDownloadURL(gifRef);
+
+              await setDoc(sessionDocRef, { gif_url: gifUrl }, { merge: true });
+              setResultData((prev: any) => prev ? {...prev, gif_url: gifUrl} : null);
             };
             reader.readAsDataURL(blob);
           });
@@ -241,7 +279,12 @@ export default function PhotoboothFlow() {
 
   const handlePrint = async () => {
     if (!resultData) return;
-    await axios.post('/api/print_queue', { session_id: resultData.session_id, image_url: resultData.local_url });
+    await addDoc(collection(db, 'print_queue'), { 
+      session_id: resultData.session_id, 
+      image_url: resultData.local_url,
+      status: 'pending',
+      timestamp: Date.now()
+    });
     alert('Sent to print queue!');
   };
 

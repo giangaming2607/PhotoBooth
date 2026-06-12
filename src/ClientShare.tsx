@@ -1,18 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import axios from 'axios';
 import { Download, Camera, Home } from 'lucide-react';
 import type { Session } from './types';
+import { db } from './firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
 export default function ClientShare() {
   const { sessionId } = useParams();
   const [session, setSession] = useState<Session | null>(null);
 
   useEffect(() => {
-    // In a real app we'd have a targeted endpoint, but for now we fetch all and filter
-    axios.get('/api/sessions').then(res => {
-      const found = res.data.sessions.find((s: Session) => s.id === sessionId);
-      if (found) setSession(found);
+    if (!sessionId) return;
+    getDoc(doc(db, 'sessions', sessionId)).then(res => {
+      if (res.exists()) {
+        setSession({ id: res.id, ...res.data() } as Session);
+      }
     });
   }, [sessionId]);
 
